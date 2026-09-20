@@ -8,6 +8,7 @@
  * ipNum.Asn // gets access to Asn
  */
 export * from './BinaryUtils'
+export * from './AddressPoolLedger'
 export * from './Hexadecatet'
 export * from './HexadecimalUtils'
 export * from './IPNumber'
