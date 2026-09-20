@@ -1,0 +1,210 @@
+'use strict';
+import {Validator} from "../src";
+import {IPNumType} from "../src";
+
+describe('Validator: ', () => {
+    describe('isValidIPv4String ', () => {
+        it('validate IPv4 strings', () => {
+            expect(Validator.isValidIPv4String('123.234.0.1')[0]).toBe(true);
+            expect(Validator.isValidIPv4String('123.234.0. 1')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('123.234.0 .1')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('10.10.10.X')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1.2.3.4xyz')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1. 2.3.4xyz')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1..3.4xyz')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1.2.3.')[0]).toBe(false);
+        });
+
+        it('rejects octets with leading zeros (CVE-2021-29921)', () => {
+            // '010' is decimal here but octal in inet_aton, so accepting it is an SSRF/allow-list bypass
+            expect(Validator.isValidIPv4String('010.0.0.1')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('01.2.3.4')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('00.0.0.0')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1.2.3.099')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1.02.3.4')[0]).toBe(false);
+            expect(Validator.isValidIPv4String('1.2.3.09')[0]).toBe(false);
+            // a single zero octet is still a valid address
+            expect(Validator.isValidIPv4String('0.0.0.0')[0]).toBe(true);
+            expect(Validator.isValidIPv4String('10.0.0.1')[0]).toBe(true);
+            expect(Validator.isValidIPv4String('192.168.0.1')[0]).toBe(true);
+            expect(Validator.isValidIPv4String('255.255.255.255')[0]).toBe(true);
+        });
+    });
+
+    describe('isValidIPv6String ', () => {
+        it('validate IPv6 strings', () => {
+            expect(Validator.isValidIPv6String('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')[0]).toBe(true);
+            expect(Validator.isValidIPv6String('ffff:ffffxyz:ffff:ffff:ffff:ffff:ffff:ffff')[0]).toBe(false);
+            expect(Validator.isValidIPv6String(' ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff ')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('ffff:ffff:::ffff:ffff:ffff')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('ffff:ffff:ffff:ffff:ffff:ffff::ffff:ffff')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('ffff:ffff:ffff:ffff:ffff:ffff:ffff: ffff')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('ffff:ffff:ffff:ffff:ffff:ffff:ffff :ffff')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('123.234.10.10')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('::123::')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('12::123::')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('::ffff:127.0.0.1')[0]).toBe(true);
+        });
+
+        it('rejects an invalid zone id instead of throwing', () => {
+            expect(() => { Validator.isValidIPv6String('fe80::1%eth-0'); }).not.toThrow();
+            expect(Validator.isValidIPv6String('fe80::1%eth-0')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('fe80::1%eth-0')[1]).toEqual([Validator.invalidIPv6PatternMessage]);
+            expect(() => { Validator.isValidIPv6String('fe80::1%'); }).not.toThrow();
+            expect(Validator.isValidIPv6String('fe80::1%')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('fe80::1%')[1]).toEqual([Validator.invalidIPv6PatternMessage]);
+            expect(Validator.isValidIPv6String('fe80::1%eth0')[0]).toBe(true);
+        });
+
+        it('rejects multiple zone id separators', () => {
+            expect(() => { Validator.isValidIPv6String('fe80::1%eth0%foo'); }).not.toThrow();
+            expect(Validator.isValidIPv6String('fe80::1%eth0%foo')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('fe80::1%eth0%foo')[1]).toEqual([Validator.invalidIPv6PatternMessage]);
+            expect(Validator.isValidIPv6String('fe80::1%%')[0]).toBe(false);
+            expect(Validator.isValidIPv6String('fe80::1%%eth0')[0]).toBe(false);
+        });
+    });
+
+    describe('isValidIPv4CidrNotation ', () => {
+        it('validate malformed IPv4', () => {
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.23")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.23")[1][0]).toBe(Validator.invalidIPv4CidrNotationMessage);
+
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/")[1][0]).toBe(Validator.invalidIPv4CidrNotationMessage);
+
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/8")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/8")[1].some(errorMessage => { return errorMessage === Validator.invalidOctetRangeMessage})).toBe(true);
+
+            expect(Validator.isValidIPv4CidrNotation("10.0.0.0/33")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("10.0.0.0/33")[1].some(errorMessage => {return errorMessage === Validator.invalidPrefixValueMessage})).toBe(true);
+
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/34")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/34")[1].some(errorMessage => { return errorMessage === Validator.invalidOctetRangeMessage})).toBe(true);
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/34")[1].some(errorMessage => {return errorMessage ===Validator.invalidPrefixValueMessage})).toBe(true);
+
+            expect(Validator.isValidIPv4CidrNotation('1.1.1.x/28')[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("123.234.334.0/3x")[0]).toBe(false);
+        });
+
+        it('should return false for CIDR range with period', () => {
+            expect(Validator.isValidIPv4CidrNotation("192.168.10.0/.1")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("192.168.10.0/.1")[1]).toContain(Validator.invalidIPv4CidrNotationMessage);
+            expect(Validator.isValidIPv4CidrNotation("192.168.10.0/1.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("192.168.10.0/1.0")[1]).toContain(Validator.invalidIPv4CidrNotationMessage);
+            expect(Validator.isValidIPv4CidrNotation("192.168.10.0/1.2.3")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("192.168.10.0/1.2.3")[1]).toContain(Validator.invalidIPv4CidrNotationMessage);
+        });
+
+        it('rejects leading-zero octets in the ip portion (CVE-2021-29921)', () => {
+            expect(Validator.isValidIPv4CidrNotation("010.0.0.1/24")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("192.168.010.0/24")[0]).toBe(false);
+            expect(Validator.isValidIPv4CidrNotation("10.0.0.0/24")[0]).toBe(true);
+        });
+    });
+
+    describe('isValidPrefixValue', () => {
+        it('validate invalid IPNumType', () => {
+            expect(Validator.isValidPrefixValue(3n, IPNumType.ASN)[0]).toBe(false);
+            expect(Validator.isValidPrefixValue(3n, IPNumType.ASN)[1].some(errorMessage => {return errorMessage === Validator.invalidInetNumType})).toBe(true);
+        });
+    });
+
+    describe('isValidIPv4Mask', () => {
+        it('rejects masks with leading-zero octets', () => {
+            expect(Validator.isValidIPv4Mask("255.255.255.000")[0]).toBe(false);
+            expect(Validator.isValidIPv4Mask("255.255.000.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4Mask("255.255.0.00")[0]).toBe(false);
+            expect(Validator.isValidIPv4Mask("255.255.255.000")[1]).toContain(Validator.invalidOctetRangeMessage);
+        });
+
+        it('still validates canonical contiguous masks', () => {
+            expect(Validator.isValidIPv4Mask("255.255.255.0")[0]).toBe(true);
+            expect(Validator.isValidIPv4Mask("255.255.0.0")[0]).toBe(true);
+            expect(Validator.isValidIPv4Mask("255.0.0.0")[0]).toBe(true);
+            expect(Validator.isValidIPv4Mask("0.0.0.0")[0]).toBe(true);
+        });
+
+        it('still rejects non-contiguous masks', () => {
+            expect(Validator.isValidIPv4Mask("255.0.255.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4Mask("10.255.10.3")[0]).toBe(false);
+        });
+    });
+
+
+    describe('isValidIPv4RangeString', () => {
+        it('validate valid range string', () => {
+            expect(Validator.isValidIPv4RangeString("10.0.0.0 - 10.0.0.255")[0]).toBe(true);
+            expect(Validator.isValidIPv4RangeString("10.0.0.0-10.0.0.255")[0]).toBe(true);
+        });
+
+        it('validate invalid range string', () => {
+            expect(Validator.isValidIPv4RangeString("10.0.0.0-10.0.0.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4RangeString("10.0.0 - 10.0.0.255")[0]).toBe(false);
+            expect(Validator.isValidIPv4RangeString("10.0.0.0-10.0.0.255.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4RangeString("10.0.0.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4RangeString("10.0.0.255-10.0.0.0")[0]).toBe(false);
+            expect(Validator.isValidIPv4RangeString("010.0.0.0-010.0.0.255")[0]).toBe(false);
+            expect(Validator.isValidIPv4RangeString("10.0.0.0-10.0.0.0255")[0]).toBe(false);
+        });
+    });
+
+    describe('isValidIPv6RangeString', () => {
+        it('validate valid range string', () => {
+            expect(Validator.isValidIPv6RangeString("2001:db8:: - 3001:db8::")[0]).toBe(true);
+            expect(Validator.isValidIPv6RangeString("2001:db8::-3001:db8::")[0]).toBe(true);
+        });
+
+        it('validate invalid range string', () => {
+            expect(Validator.isValidIPv6RangeString("10.0.0.0 - 10.0.0.255")[0]).toBe(false);
+            expect(Validator.isValidIPv6RangeString("10.0.0.0-10.0.0.255")[0]).toBe(false);
+            expect(Validator.isValidIPv6RangeString("2001:db8: - 3001:db8::")[0]).toBe(false);
+            expect(Validator.isValidIPv6RangeString("2001:db8:: - 3001:db8")[0]).toBe(false);
+            expect(Validator.isValidIPv6RangeString("3001:db8")[0]).toBe(false);
+            expect(Validator.isValidIPv6RangeString("3001:db8::-2001:db8::")[0]).toBe(false);
+        });
+    });
+
+    describe('isValidIPv4CidrRange', () => {
+      it('validate valid ipv4 cidr range', () => {
+        expect(Validator.isValidIPv4CidrRange("10.0.0.0/8")[0]).toBe(true)
+      });
+
+      it('validate invalid ipv4 cidr range', () => {
+        expect(Validator.isValidIPv4CidrRange("10.0.0.1/8")[0]).toBe(false)
+      });
+
+      it('validate invalid ipv4 cidr notation', () => {
+        expect(Validator.isValidIPv4CidrRange("10.0.0.18")[0]).toBe(false)
+      });
+    });
+
+    describe('isValidIPv6CidrRange', () => {
+      it('validate valid ipv6 cidr range', () => {
+        expect(Validator.isValidIPv6CidrRange("2001:db8:85a3::/64")[0]).toBe(true)
+      });
+
+      it('validate invalid ipv6 cidr range', () => {
+        expect(Validator.isValidIPv6CidrRange("2001:db8:85a3::8a2e:370:7334/64")[0]).toBe(false)
+      });
+
+      it('validate invalid ipv6 cidr notation', () => {
+        expect(Validator.isValidIPv6CidrRange("2001:8a2e:370Q:733464")[0]).toBe(false)
+      });
+
+      it('rejects an IPv6 address with no prefix instead of throwing', () => {
+        expect(() => { Validator.isValidIPv6CidrNotation("2001:db8::"); }).not.toThrow()
+        expect(Validator.isValidIPv6CidrNotation("2001:db8::")[0]).toBe(false)
+        expect(() => { Validator.isValidIPv6CidrRange("2001:db8::"); }).not.toThrow()
+        expect(Validator.isValidIPv6CidrRange("2001:db8::")[0]).toBe(false)
+      });
+    })
+
+    describe('isValidIPv6Mask', () => {
+      it('should return false for invalid IPv6 mask string without throwing', () => {
+        expect(() => { Validator.isValidIPv6Mask(""); }).not.toThrow()
+        expect(Validator.isValidIPv6Mask("")[0]).toBe(false)
+      })
+    })
+});

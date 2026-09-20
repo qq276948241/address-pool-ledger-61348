@@ -1,0 +1,9 @@
+.idea
+.nyc_output
+coverage
+*.iml
+node_modules
+.DS_Store
+yarn.lock
+
+/spec/support/jasmine.json
